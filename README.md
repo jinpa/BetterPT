@@ -17,3 +17,14 @@ python scripts/simple_scrape.py
 ```
 
 Inspect the saved pages under `scripts/out/`.
+
+### Export current workout to JSON
+
+To export the current program (after logging in and optionally submitting an access code) to a minimal JSON file for the static site:
+
+```bash
+# Optional: set MB_TOKEN and MB_TOKEN_NAME in .env (e.g. MB_TOKEN_NAME=knee)
+python scripts/export_workout.py
+```
+
+Output: `scripts/out/workout.json` (program name, exercise list with name, description, sets, reps, hold, note). Override path with `WORKOUT_JSON_PATH`.
