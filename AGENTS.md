@@ -1,5 +1,5 @@
 # Project context for AI
 
-**Cursor** automatically loads project context from **`.cursor/rules/project-context.mdc`** (with `alwaysApply: true`). That file contains the full summary: goal, tech stack, conventions, key scripts, constraints, and quick run.
+**Cursor** loads **`.cursor/rules/project-context.mdc`** automatically (concise: goal, stack, conventions, scripts, constraints, quick run).
 
-If you're not in Cursor, read `.cursor/rules/project-context.mdc` for the same content. Full product plan: [prd.md](prd.md).
+**Auth/API details and script notes** are in **`docs/PROJECT_NOTES.md`** — read when you need them, not every time. Full plan: [prd.md](prd.md).

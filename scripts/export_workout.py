@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Export current MedBridge Go workout to a minimal JSON file for the static site.
+Export MedBridge Go workout(s) to minimal JSON for the static site.
 
 Usage:
-  Set MB_USER, MB_PASS in .env. Optionally set MB_TOKEN (access code) and MB_TOKEN_NAME (e.g. "knee").
+  Set MB_USER, MB_PASS in .env.
+  Either:
+    - MB_TOKENS=name1:code1,name2:code2  (multiple programs in one run)
+    - or MB_TOKEN=code and optional MB_TOKEN_NAME=name (single program)
   Run from repo root: python scripts/export_workout.py
 
 Output:
-  scripts/out/workout.json (or path from env WORKOUT_JSON_PATH)
+  scripts/out/workout_<name>.json per program, or workout.json if single and no name.
 """
 
 from __future__ import annotations
@@ -92,6 +95,28 @@ def fetch_workout_json(session: requests.Session) -> dict:
     return r.json()
 
 
+def _slug(name: str) -> str:
+    """URL-safe slug from program name for filenames."""
+    safe = re.sub(r"[^\w\s-]", "", name.lower())
+    return re.sub(r"[-\s]+", "-", safe).strip("-") or "workout"
+
+
+def _parse_mb_tokens(value: str) -> list[tuple[str, str]]:
+    """Parse MB_TOKENS env: 'name1:code1,name2:code2' -> [(name1, code1), (name2, code2)]."""
+    pairs: list[tuple[str, str]] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        idx = part.find(":")
+        if idx <= 0:
+            continue
+        name, code = part[:idx].strip(), part[idx + 1 :].strip()
+        if name and code:
+            pairs.append((name, code))
+    return pairs
+
+
 def build_export_payload(api_payload: dict, program_name_override: str | None = None) -> dict:
     """Convert API response to minimal JSON for static site."""
     episode = api_payload.get("episode") or {}
@@ -112,16 +137,10 @@ def main() -> None:
     load_dotenv()
     user = os.getenv("MB_USER")
     password = os.getenv("MB_PASS")
-    access_code = os.getenv("MB_TOKEN")
+    mb_tokens_raw = os.getenv("MB_TOKENS")
+    single_token = os.getenv("MB_TOKEN")
     name_override = os.getenv("MB_TOKEN_NAME")
-    out_path = os.getenv("WORKOUT_JSON_PATH")
-    if not out_path:
-        if name_override:
-            safe = re.sub(r"[^\w\s-]", "", name_override.lower())
-            safe = re.sub(r"[-\s]+", "-", safe).strip("-") or "workout"
-            out_path = str(OUT_DIR / f"workout_{safe}.json")
-        else:
-            out_path = str(OUT_DIR / "workout.json")
+    out_path_override = os.getenv("WORKOUT_JSON_PATH")
 
     if not user or not password:
         print("Set MB_USER and MB_PASS in .env (see .env.example)", file=sys.stderr)
@@ -129,12 +148,39 @@ def main() -> None:
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    if mb_tokens_raw:
+        # Multiple programs: name1:code1,name2:code2
+        pairs = _parse_mb_tokens(mb_tokens_raw)
+        if not pairs:
+            print("MB_TOKENS is set but no valid name:code pairs found (e.g. knee:CODE1,elbow:CODE2)", file=sys.stderr)
+            sys.exit(1)
+        for i, (name, code) in enumerate(pairs):
+            print(f"[{i + 1}/{len(pairs)}] {name!r}...")
+            session = login_session(user, password)
+            submit_access_code(session, code)
+            api_payload = fetch_workout_json(session)
+            export = build_export_payload(api_payload, program_name_override=name)
+            out_path = OUT_DIR / f"workout_{_slug(name)}.json"
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(export, f, indent=2, ensure_ascii=False)
+            print(f"  Wrote {export['exercise_count']} exercises to {out_path}")
+        return
+
+    # Single program (legacy)
+    if out_path_override:
+        out_path = Path(out_path_override)
+    else:
+        if name_override:
+            out_path = OUT_DIR / f"workout_{_slug(name_override)}.json"
+        else:
+            out_path = OUT_DIR / "workout.json"
+
     print("Logging in...")
     session = login_session(user, password)
 
-    if access_code:
+    if single_token:
         print("Submitting access code...")
-        submit_access_code(session, access_code)
+        submit_access_code(session, single_token)
     else:
         print("MB_TOKEN not set; using current session program (if any).")
 
@@ -142,7 +188,7 @@ def main() -> None:
     api_payload = fetch_workout_json(session)
     export = build_export_payload(api_payload, program_name_override=name_override)
 
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(export, f, indent=2, ensure_ascii=False)
 

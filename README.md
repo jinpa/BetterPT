@@ -18,20 +18,21 @@ python scripts/simple_scrape.py
 
 Inspect the saved pages under `scripts/out/`.
 
-### Export current workout to JSON
+### Export workout(s) to JSON
 
-To export the current program (after logging in and optionally submitting an access code) to a minimal JSON file for the static site:
+Export one or more programs to minimal JSON for the static site.
 
+**Multiple programs in one run:** set in `.env`:
 ```bash
-# Optional: set MB_TOKEN and MB_TOKEN_NAME in .env (e.g. MB_TOKEN_NAME=knee)
-python scripts/export_workout.py
+MB_TOKENS=knee:ACCESS_CODE_1,elbow:ACCESS_CODE_2
 ```
+Then run `python scripts/export_workout.py`. Each program is written to `scripts/out/workout_<name>.json`.
 
-Output: `scripts/out/workout.json` (program name, exercise list with name, description, sets, reps, hold, note). Override path with `WORKOUT_JSON_PATH`.
+**Single program:** set `MB_TOKEN` and optionally `MB_TOKEN_NAME` in `.env`, then run `python scripts/export_workout.py`. Output: `workout.json` or `workout_<name>.json`. Override path with `WORKOUT_JSON_PATH`.
 
 ### Build static site
 
-After exporting one or more workouts (run `export_workout.py` once per access code; set `MB_TOKEN` and `MB_TOKEN_NAME` in `.env` for each run so outputs go to `workout_<name>.json`), generate the static site:
+After exporting (one or more `workout*.json` files in `scripts/out/`), generate the static site:
 
 ```bash
 python scripts/build_site.py
