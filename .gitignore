@@ -1,5 +1,6 @@
 .env
 .venv/
 scripts/out/
+dist/
 *.pyc
 __pycache__/

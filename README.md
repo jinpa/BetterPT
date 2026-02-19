@@ -28,3 +28,13 @@ python scripts/export_workout.py
 ```
 
 Output: `scripts/out/workout.json` (program name, exercise list with name, description, sets, reps, hold, note). Override path with `WORKOUT_JSON_PATH`.
+
+### Build static site
+
+After exporting one or more workouts (run `export_workout.py` once per access code; set `MB_TOKEN` and `MB_TOKEN_NAME` in `.env` for each run so outputs go to `workout_<name>.json`), generate the static site:
+
+```bash
+python scripts/build_site.py
+```
+
+Output: `dist/index.html` (list of programs), `dist/<slug>.html` (one page per program with exercises and instructions), and `dist/style.css`. Open `dist/index.html` in a browser or deploy `dist/` to GitHub Pages.

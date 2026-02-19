@@ -114,7 +114,14 @@ def main() -> None:
     password = os.getenv("MB_PASS")
     access_code = os.getenv("MB_TOKEN")
     name_override = os.getenv("MB_TOKEN_NAME")
-    out_path = os.getenv("WORKOUT_JSON_PATH") or str(OUT_DIR / "workout.json")
+    out_path = os.getenv("WORKOUT_JSON_PATH")
+    if not out_path:
+        if name_override:
+            safe = re.sub(r"[^\w\s-]", "", name_override.lower())
+            safe = re.sub(r"[-\s]+", "-", safe).strip("-") or "workout"
+            out_path = str(OUT_DIR / f"workout_{safe}.json")
+        else:
+            out_path = str(OUT_DIR / "workout.json")
 
     if not user or not password:
         print("Set MB_USER and MB_PASS in .env (see .env.example)", file=sys.stderr)
