@@ -18,9 +18,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -28,8 +29,10 @@ from dotenv import load_dotenv
 
 
 BASE = "https://www.medbridgego.com"
+REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = Path(__file__).resolve().parent / "out"
 EPISODE_URL = f"{BASE}/api/v4/plus/episode/episode_with_video_urls"
+EPISODES_LIST_URL = f"{BASE}/api/v4/plus/episodes/"
 
 
 def login_session(user: str, password: str) -> requests.Session:
@@ -55,7 +58,31 @@ def login_session(user: str, password: str) -> requests.Session:
     return session
 
 
-def submit_access_code(session: requests.Session, access_code: str) -> None:
+def logout_session(session: requests.Session) -> None:
+    """Sign out so the next login gets a clean 'current program' state (matches real-life flow)."""
+    r = session.get(f"{BASE}/sign_out", timeout=10)
+    # 200 or 302 both mean we're logged out; don't require 200
+    if r.status_code not in (200, 302):
+        r.raise_for_status()
+
+
+def re_login(session: requests.Session, user: str, password: str) -> None:
+    """Log in again into the same session (after logout, so server clears current program)."""
+    r = session.get(f"{BASE}/sign_in", params={"set_sign_in": "true"})
+    r.raise_for_status()
+    soup = BeautifulSoup(r.text, "html.parser")
+    form = soup.find("form", {"id": "patient-signin-form"}) or soup.find("form", action=re.compile(r"sign_in|session"))
+    if not form:
+        raise RuntimeError("Could not find login form on /sign_in")
+    action = urljoin(BASE, form.get("action") or "/sign_in")
+    inputs = {inp["name"]: inp.get("value", "") for inp in form.find_all("input", {"name": True})}
+    inputs["patient[username]"] = user
+    inputs["patient[password]"] = password
+    session.post(action, data=inputs, allow_redirects=True).raise_for_status()
+
+
+def submit_access_code(session: requests.Session, access_code: str) -> tuple[str, int | None]:
+    """Submit access code; return (final_url, episode_id from response if any)."""
     r = session.get(f"{BASE}/access_token")
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
@@ -66,7 +93,67 @@ def submit_access_code(session: requests.Session, access_code: str) -> None:
     inputs = {inp["name"]: inp.get("value", "") for inp in form.find_all("input", {"name": True})}
     inputs["token"] = access_code
     inputs.setdefault("verify_access_code", "Verify Access Code")
-    session.post(action, data=inputs, allow_redirects=True).raise_for_status()
+    r = session.post(action, data=inputs, allow_redirects=False)
+    r.raise_for_status()
+    episode_id: int | None = None
+
+    def _int_id(val: object) -> int | None:
+        if val is None:
+            return None
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return None
+
+    # Response body might be JSON with the activated episode/program id
+    ct = (r.headers.get("Content-Type") or "").lower()
+    if "json" in ct and r.text.strip():
+        try:
+            data = r.json()
+            if isinstance(data, dict):
+                episode_id = _int_id(data.get("episode_id"))
+                if episode_id is None:
+                    ep = data.get("episode")
+                    episode_id = _int_id(ep.get("id") if isinstance(ep, dict) else None)
+                if episode_id is None:
+                    episode_id = _int_id(data.get("program_id"))
+                if episode_id is None:
+                    prog = data.get("program")
+                    episode_id = _int_id(prog.get("id") if isinstance(prog, dict) else None)
+        except (ValueError, TypeError):
+            pass
+    # Redirect Location might include episode_id in query or fragment
+    if episode_id is None and r.status_code in (301, 302, 303, 307, 308):
+        loc = r.headers.get("Location") or ""
+        if loc:
+            parsed = urlparse(loc)
+            for part in (parse_qs(parsed.query), parse_qs(parsed.fragment or "")):
+                for key in ("episode_id", "episode_id[]", "id"):
+                    if key in part and part[key]:
+                        episode_id = _int_id(part[key][0])
+                        if episode_id is not None:
+                            break
+                if episode_id is not None:
+                    break
+    # HTML body might embed episode id (e.g. SPA bootstrap)
+    if episode_id is None and r.text.strip().startswith("<"):
+        for pattern in (
+            re.compile(r'["\']?episode_?id["\']?\s*[:=]\s*["\']?(\d+)'),
+            re.compile(r'data-episode-?id=["\'](\d+)["\']'),
+        ):
+            m = pattern.search(r.text)
+            if m:
+                episode_id = _int_id(m.group(1))
+                break
+    # Follow redirects to get final URL
+    while r.status_code in (301, 302, 303, 307, 308):
+        loc = r.headers.get("Location")
+        if not loc:
+            break
+        next_url = urljoin(r.url, loc)
+        r = session.get(next_url, allow_redirects=False, timeout=15)
+        r.raise_for_status()
+    return (r.url, episode_id)
 
 
 def _normalize_exercise(pe: dict) -> dict:
@@ -89,8 +176,24 @@ def _normalize_exercise(pe: dict) -> dict:
     }
 
 
-def fetch_workout_json(session: requests.Session) -> dict:
-    r = session.get(EPISODE_URL, headers={"Accept": "application/json"}, timeout=20)
+def get_current_episode_id(session: requests.Session) -> int | None:
+    """Episodes list returns the current program's episode. Use its id when exactly one (for single-token flow)."""
+    r = session.get(EPISODES_LIST_URL, headers={"Accept": "application/json"}, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+    episodes = data.get("episodes") if isinstance(data, dict) else None
+    if isinstance(episodes, list) and len(episodes) == 1:
+        ep = episodes[0]
+        if isinstance(ep, dict) and ep.get("id") is not None:
+            return ep["id"]
+    return None
+
+
+def fetch_workout_json(session: requests.Session, episode_id: int | None = None) -> dict:
+    url = EPISODE_URL
+    if episode_id is not None:
+        url = f"{EPISODE_URL}?{urlencode({'episode_id': episode_id})}"
+    r = session.get(url, headers={"Accept": "application/json"}, timeout=20)
     r.raise_for_status()
     return r.json()
 
@@ -134,13 +237,39 @@ def build_export_payload(api_payload: dict, program_name_override: str | None = 
 
 
 def main() -> None:
-    load_dotenv()
+    env_path = REPO_ROOT / ".env"
+    load_dotenv(env_path, override=True)
+    if not env_path.exists():
+        load_dotenv()  # fallback: cwd
     user = os.getenv("MB_USER")
     password = os.getenv("MB_PASS")
     mb_tokens_raw = os.getenv("MB_TOKENS")
     single_token = os.getenv("MB_TOKEN")
     name_override = os.getenv("MB_TOKEN_NAME")
     out_path_override = os.getenv("WORKOUT_JSON_PATH")
+
+    # Fallback: dotenv can miss MB_TOKENS (e.g. encoding/parsing); read .env directly
+    if not mb_tokens_raw and env_path.exists():
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip().strip("\r")
+                if line.startswith("MB_TOKENS="):
+                    mb_tokens_raw = line.split("=", 1)[1].strip().strip('"\'')
+                    os.environ["MB_TOKENS"] = mb_tokens_raw
+                    break
+
+    # When invoked as subprocess with MB_TOKEN/MB_TOKEN_NAME, force single-token path (ignore MB_TOKENS from .env)
+    if single_token:
+        mb_tokens_raw = None
+        os.environ.pop("MB_TOKENS", None)
+
+    # DEBUG: remove once multi-program export is confirmed working
+    print(
+        f"DEBUG: .env path={env_path!s} exists={env_path.exists()}, "
+        f"MB_TOKENS={'set' if mb_tokens_raw else 'unset'}"
+        + (f" ({len(mb_tokens_raw)} chars)" if mb_tokens_raw else ""),
+        file=sys.stderr,
+    )
 
     if not user or not password:
         print("Set MB_USER and MB_PASS in .env (see .env.example)", file=sys.stderr)
@@ -149,21 +278,25 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     if mb_tokens_raw:
-        # Multiple programs: name1:code1,name2:code2
+        # Multiple programs: run one subprocess per token so each has a truly isolated session (MedBridge returns first/default program otherwise)
         pairs = _parse_mb_tokens(mb_tokens_raw)
         if not pairs:
             print("MB_TOKENS is set but no valid name:code pairs found (e.g. knee:CODE1,elbow:CODE2)", file=sys.stderr)
             sys.exit(1)
+        script_path = Path(__file__).resolve()
         for i, (name, code) in enumerate(pairs):
             print(f"[{i + 1}/{len(pairs)}] {name!r}...")
-            session = login_session(user, password)
-            submit_access_code(session, code)
-            api_payload = fetch_workout_json(session)
-            export = build_export_payload(api_payload, program_name_override=name)
-            out_path = OUT_DIR / f"workout_{_slug(name)}.json"
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump(export, f, indent=2, ensure_ascii=False)
-            print(f"  Wrote {export['exercise_count']} exercises to {out_path}")
+            child_env = {**os.environ, "MB_TOKEN": code, "MB_TOKEN_NAME": name}
+            child_env.pop("MB_TOKENS", None)
+            result = subprocess.run(
+                [sys.executable, str(script_path)],
+                env=child_env,
+                cwd=str(REPO_ROOT),
+            )
+            if result.returncode != 0:
+                print(f"  Subprocess for {name!r} exited with {result.returncode}", file=sys.stderr)
+                sys.exit(result.returncode)
+            print(f"  Wrote workout_{_slug(name)}.json")
         return
 
     # Single program (legacy)
@@ -180,12 +313,18 @@ def main() -> None:
 
     if single_token:
         print("Submitting access code...")
-        submit_access_code(session, single_token)
+        final_url, episode_id_from_token = submit_access_code(session, single_token)
+        session.get(final_url, timeout=15).raise_for_status()
+        # Prefer episode id from register_token response so we get this program, not account default
+        episode_id = episode_id_from_token or get_current_episode_id(session)
+        if episode_id_from_token is not None:
+            print(f"  Using episode_id={episode_id_from_token} from token response", file=sys.stderr)
     else:
         print("MB_TOKEN not set; using current session program (if any).")
+        episode_id = None
 
     print("Fetching workout (episode_with_video_urls)...")
-    api_payload = fetch_workout_json(session)
+    api_payload = fetch_workout_json(session, episode_id=episode_id)
     export = build_export_payload(api_payload, program_name_override=name_override)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
