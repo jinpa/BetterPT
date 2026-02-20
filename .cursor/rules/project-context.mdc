@@ -5,16 +5,16 @@ alwaysApply: true
 
 # BetterPT
 
-**Goal:** One place to see all current workouts from multiple PTs: log in to MedBridge Go, use access codes (with labels), fetch workout data, produce a static site (GitHub Pages). Plan: [prd.md](prd.md).
+**Goal:** One place to see all current workouts from multiple PTs: log in to MedBridge Go, use access codes (with labels), fetch workout data per program, produce a static site (GitHub Pages). Export strategy: [playwright-prd.md](playwright-prd.md).
 
-**Stack:** Python 3 + venv (`.venv/`). `requests`, `python-dotenv`, `beautifulsoup4`. Cookie auth; no Playwright. Static HTML/CSS. Use `.venv/bin/python` or `source .venv/bin/activate` in Cursor’s terminal.
+**Stack:** Python 3 + venv (`.venv/`). Playwright for export (browser automation); `build_site.py` and static HTML/CSS unchanged. Use `.venv/bin/python` or `source .venv/bin/activate`; `playwright install` for browser binaries. Legacy requests-based export deprecated (multi-program returned same workout).
 
-**Conventions:** Secrets in `.env` only (`MB_USER`, `MB_PASS`, `MB_TOKENS=name1:code1,name2:code2` or single `MB_TOKEN`/`MB_TOKEN_NAME`). Scripts under `scripts/`, run from repo root. Outputs: `scripts/out/` (workout JSON, HTML dumps), `dist/` (static site). Both gitignored. Slugs: lowercase, hyphens; `workout_<slug>.json` per program.
+**Conventions:** Secrets in `.env` only (`MB_USER`, `MB_PASS`, `MB_TOKENS=name1:code1,name2:code2` or single `MB_TOKEN`/`MB_TOKEN_NAME`). Scripts under `scripts/`, run from repo root. Outputs: `scripts/out/` (workout JSON), `dist/` (static site). Both gitignored. Slugs: lowercase, hyphens; `workout_<slug>.json` per program; export must match existing schema for `build_site.py`.
 
-**Scripts:** `simple_scrape.py` — POC login + token, save HTML. `discover_api.py` — probe APIs, episode_with_video_urls. `export_workout.py` — login + token(s), write `workout*.json`. `build_site.py` — read `workout*.json`, write `dist/`.
+**Scripts:** Phase 1 — debug script (TBD): login + token(s), record network/redirects to discover how “current program” is set. Phase 2 — Playwright export (TBD): per (name, token) login + submit token, capture workout JSON, write `workout_<slug>.json`. `build_site.py` — read `workout*.json`, write `dist/`. Legacy: `export_workout.py` (requests; single-program only in practice).
 
 **Constraints:** Read-only MedBridge use. Manual refresh only. v1: current workouts, no history/media. Credentials UI later.
 
-**Quick run:** `source .venv/bin/activate` → `python scripts/export_workout.py` → `python scripts/build_site.py` → `open dist/index.html`. Deploy: push `dist/` to GitHub Pages.
+**Quick run:** `source .venv/bin/activate` → (Phase 2 export script when ready) → `python scripts/build_site.py` → `open dist/index.html`. Deploy: push `dist/` to GitHub Pages.
 
-**More detail (auth, API URLs, script notes):** [docs/PROJECT_NOTES.md](docs/PROJECT_NOTES.md) — read when needed, not loaded every time.
+**More detail:** [playwright-prd.md](playwright-prd.md) — full PRD, phases, success criteria. [docs/PROJECT_NOTES.md](docs/PROJECT_NOTES.md) — auth, API URLs, script notes; read when needed.
