@@ -39,3 +39,15 @@ python scripts/build_site.py
 ```
 
 Output: `dist/index.html` (list of programs), `dist/<slug>.html` (one page per program with exercises and instructions), and `dist/style.css`. Open `dist/index.html` in a browser or deploy `dist/` to GitHub Pages.
+
+### Phase 1 debug (Playwright)
+
+To run the Phase 1 debug script (login + token(s), record network/redirects/storage to discover how “current program” is set):
+
+```bash
+pip install -r requirements.txt
+playwright install   # one-time: install browser binaries
+python scripts/phase1_debug_network.py   # optional: --headed or PHASE1_HEADED=1 to show browser
+```
+
+Outputs go to `scripts/out/phase1_*`. See [docs/PHASE1_FINDINGS.md](docs/PHASE1_FINDINGS.md) and [playwright-prd.md](playwright-prd.md).
