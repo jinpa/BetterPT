@@ -11,10 +11,10 @@ alwaysApply: true
 
 **Conventions:** Secrets in `.env` only (`MB_USER`, `MB_PASS`, `MB_TOKENS=name1:code1,name2:code2` or single `MB_TOKEN`/`MB_TOKEN_NAME`). Scripts under `scripts/`, run from repo root. Outputs: `scripts/out/` (workout JSON), `dist/` (static site). Both gitignored. Slugs: lowercase, hyphens; `workout_<slug>.json` per program; export must match existing schema for `build_site.py`.
 
-**Scripts:** Phase 1 — `scripts/phase1_debug_network.py`: login + token(s), record network/redirects/storage to discover how “current program” is set. Phase 2 — Playwright export (TBD): per (name, token) login + submit token, capture workout JSON, write `workout_<slug>.json`. `build_site.py` — read `workout*.json`, write `dist/`. Legacy: `export_workout.py` (requests; single-program only in practice).
+**Scripts:** Phase 1 — `scripts/phase1_debug_network.py`: login + token(s), record network/redirects/storage to discover how “current program” is set. Phase 2 — `scripts/phase2_export_playwright.py`: per (name, token) fresh context, login + submit token, capture workout JSON, write `workout_<slug>.json`. `build_site.py` — read `workout*.json`, write `dist/`. Legacy: `export_workout.py` (requests; single-program only in practice).
 
 **Constraints:** Read-only MedBridge use. Manual refresh only. v1: current workouts, no history/media. Credentials UI later.
 
-**Quick run:** `source .venv/bin/activate` → (Phase 2 export script when ready) → `python scripts/build_site.py` → `open dist/index.html`. Deploy: push `dist/` to GitHub Pages.
+**Quick run:** `source .venv/bin/activate` → `python scripts/phase2_export_playwright.py` → `python scripts/build_site.py` → `open dist/index.html`. Deploy: push `dist/` to GitHub Pages.
 
 **More detail:** [playwright-prd.md](playwright-prd.md) — full PRD, phases, success criteria. [docs/PROJECT_NOTES.md](docs/PROJECT_NOTES.md) — auth, API URLs, script notes; read when needed.

@@ -18,17 +18,20 @@ python scripts/simple_scrape.py
 
 Inspect the saved pages under `scripts/out/`.
 
-### Export workout(s) to JSON
+### Export workout(s) to JSON (Phase 2 — recommended)
 
-Export one or more programs to minimal JSON for the static site.
+For **multiple programs** with correct workout per program, use the Playwright export (one browser context per token):
 
-**Multiple programs in one run:** set in `.env`:
 ```bash
-MB_TOKENS=knee:ACCESS_CODE_1,elbow:ACCESS_CODE_2
+pip install -r requirements.txt
+playwright install   # one-time
+# In .env: MB_USER, MB_PASS, MB_TOKENS=knee:CODE1,neck:CODE2,elbow:CODE3
+python scripts/phase2_export_playwright.py   # optional: --headed or PHASE2_HEADED=1
 ```
-Then run `python scripts/export_workout.py`. Each program is written to `scripts/out/workout_<name>.json`.
 
-**Single program:** set `MB_TOKEN` and optionally `MB_TOKEN_NAME` in `.env`, then run `python scripts/export_workout.py`. Output: `workout.json` or `workout_<name>.json`. Override path with `WORKOUT_JSON_PATH`.
+Output: `scripts/out/workout_<slug>.json` per program. Then run `python scripts/build_site.py`.
+
+**Legacy (single program or same workout for all):** `scripts/export_workout.py` with `MB_TOKEN` and optional `MB_TOKEN_NAME`, or `MB_TOKENS=name1:code1,...` (requests-based; multi-program returns same workout in practice).
 
 ### Build static site
 

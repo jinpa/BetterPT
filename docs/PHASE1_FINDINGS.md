@@ -33,3 +33,13 @@ Filled from a run of `scripts/phase1_debug_network.py` with tokens (neck, elbow,
 - **One browser context (or login) per program.** To get a different workout per token, Phase 2 should use a **separate browser context** (or at least a fresh login/session) per `(name, token)`: log in, submit that token only, wait for the SPA to load, then capture the `episode_with_video_urls` response (or call the API from that context). Do not submit multiple tokens in the same session and expect different episode ids.
 - **Optional:** After submitting a single token, inspect the first `episode_with_video_urls` request from the SPA to see if the server ever returns a different `episode_id` for that session; if so, we could call the same API with that id. The Phase 1 run suggests the server keeps one “current” episode per session, so one-context-per-token is the reliable approach.
 - Keep using the same workout JSON schema so `build_site.py` is unchanged.
+
+---
+
+## Phase 2 outcome (confirmed limitation)
+
+We tried: one context per token; token in URL path (`/access_token/CODE`); login-first vs token-URL-first; calling the API with no `episode_id`; headed browser. **In all cases the Playwright session showed the knee workout** (account default). Visiting `https://medbridgego.com/access_token/<neck_code>` in a normal browser can show the neck program, so the server applies the token in that flow (e.g. when the token is in the URL before or during login). In our automation, the session’s “current program” is set at login and does not change when we later visit `/access_token/CODE`.
+
+**Concrete evidence:** When we load `/access_token/<neck_code>` in the script, the server returns the "Verify your access code" page with **provider name "Agile Physical Therapy"** (the knee PT) embedded in the page. The neck program's provider is different; the server is returning account-default (knee) context for that URL in our flow.
+
+**Practical workaround:** Phase 2 writes one `workout_<slug>.json` per token but all contain the same (default) program data. For distinct programs you’d need to either (1) run the export once per program after manually opening that program’s URL in a real browser and copying session/cookies (not implemented), or (2) use a single token and accept one program per export run.

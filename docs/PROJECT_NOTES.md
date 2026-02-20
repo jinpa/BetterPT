@@ -18,6 +18,7 @@ Notes and decisions from building the project. No need to load this every time; 
 | Script | Purpose |
 |--------|---------|
 | `scripts/phase1_debug_network.py` | Phase 1: login + token(s), record network/redirects/storage (Playwright). Outputs under `scripts/out/phase1_*`. See [playwright-prd.md](../playwright-prd.md) and [PHASE1_FINDINGS.md](PHASE1_FINDINGS.md). |
+| `scripts/phase2_export_playwright.py` | Phase 2: one browser context per (name, token); login, submit token, capture episode_with_video_urls, write `workout_<slug>.json`. Use for multi-program export (correct workout per program). |
 | `scripts/simple_scrape.py` | POC: login, optional register_token, save HTML to `scripts/out/` (01_sign_in … 05_home_after_token). Redacts JWT/CSRF in saved HTML. |
 | `scripts/discover_api.py` | Login, optional token, fetch JS bundle, probe endpoints, call episode_with_video_urls; write `api_discovery.txt` and high-signal summary. |
 | `scripts/export_workout.py` | Login; with `MB_TOKENS=name1:code1,name2:code2` exports each to `workout_<name>.json` in one run; else single `MB_TOKEN`/`MB_TOKEN_NAME` → `workout.json` or `workout_<name>.json`. |
